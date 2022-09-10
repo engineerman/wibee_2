@@ -104,9 +104,39 @@ void onUpdate(AsyncWebServerRequest *request, const String &filename, size_t ind
   }
 }
 
-void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
+void process_websocket_messages(const uint8_t *buffer, size_t size)
 {
-  // Handle WebSocket event
+  char *cc = (char *)malloc(sizeof(char) * (size + 1));
+  memcpy(cc, buffer, size);
+
+  cc[size] = 0;
+
+  String cmd = String(cc);
+
+  if (cmd.startsWith("ping"))
+  {
+    ws.textAll("pong");
+  }
+  else if (cmd.startsWith("addw"))
+  {
+    String ssid;
+    String pass;
+
+    String args = cmd.substring(5, cmd.length() - 1);
+
+    int ind = args.indexOf(",");
+
+    if (ind > 0)
+    {
+      ssid = args.substring(0, ind);
+      pass = args.substring(ind + 1);
+      wifiMulti.addAP(ssid.c_str(), pass.c_str());
+
+      DEBUG("Adding Wifi " + ssid);
+    }
+  }
+
+  free(cc);
 }
 
 void on_ws_event(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
@@ -135,10 +165,9 @@ void on_ws_event(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventT
   }
   else if (type == WS_EVT_DATA)
   {
+    Serial.printf("ws[%s][%u] data[%d]: %s\n", server->url(), client->id(), len, (len) ? (char *)data : "");
 
-    // Serial.printf("ws[%s][%u] data[%d]: %s\n", server->url(), client->id(), len, (len) ? (char *)data : "");
-
-    // process_websocket_messages(data, len);
+    process_websocket_messages(data, len);
   }
 }
 
@@ -218,7 +247,7 @@ void setup()
   DEBUG("");
 
   // attach AsyncWebSocket
-  ws.onEvent(onEvent);
+  ws.onEvent(on_ws_event);
   server.addHandler(&ws);
 
   server.on(
