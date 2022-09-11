@@ -5,7 +5,6 @@
 #include "pgmspace.h"
 
 const char index_html[] PROGMEM = R"rawliteral(
-
 <!DOCTYPE html>
 
 <html>
@@ -41,7 +40,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       function sendMessage() {
         var cmd = document.getElementById("txtCmd").value;
 
-        ws.send(cmd);
+        ws.send(cmd + "\n");
       }
 
       function WebSocketTest() {
@@ -120,7 +119,6 @@ const char index_html[] PROGMEM = R"rawliteral(
     <input type="button" id="btnSned" onClick="sendMessage()" value="Send" />
   </body>
 </html>
-
 
 
     )rawliteral";

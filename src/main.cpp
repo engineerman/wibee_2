@@ -5,15 +5,16 @@
 #include <WiFiMulti.h>
 #include "SD_MMC.h"
 #include "Version.h"
+#include "settings.h"
 
 #include "html.h"
+#include "sdkconfig.h"
+
+#include "ESPmDNS.h"
 
 #define DEBUG(x) Serial.println(x);
-#define DEFAULT_WIFIAP_PASSWORD "wibee444 "
+#define DEFAULT_WIFIAP_PASSWORD "wibee444"
 // OTA Update
-
-const char *ssid = "Vodafonenet_Wifi_0257";
-const char *password = "LLXN3VRMYHMK";
 
 unsigned long mTimer;
 #define TIMEOUT 4000
@@ -37,7 +38,7 @@ int rx2Ind = 0;
 unsigned long lastRxTime;
 unsigned long lastRx2Time;
 
-#include "ESPmDNS.h"
+systemConfiguration *sysConfig = NULL;
 
 bool AdvertiseServices(const char *serviceName = "wibee")
 {
@@ -117,6 +118,16 @@ void process_websocket_messages(const uint8_t *buffer, size_t size)
   {
     ws.textAll("pong");
   }
+  else if (cmd.startsWith("clrw"))
+  {
+    int ind = cmd.substring(5, cmd.length() - 1).toInt();
+
+    sysConfig->clearWifiCredentials(ind);
+
+    sysConfig->addWifiCredentials(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASS);
+
+    sysConfig->saveToFile();
+  }
   else if (cmd.startsWith("addw"))
   {
     String ssid;
@@ -132,7 +143,11 @@ void process_websocket_messages(const uint8_t *buffer, size_t size)
       pass = args.substring(ind + 1);
       wifiMulti.addAP(ssid.c_str(), pass.c_str());
 
+      sysConfig->addWifiCredentials(ssid, pass);
+
       DEBUG("Adding Wifi " + ssid);
+
+      sysConfig->saveToFile();
     }
   }
 
@@ -193,6 +208,24 @@ bool check_req_timeout(int timeout = TIMEOUT)
   return res;
 }
 
+bool addKnownWifis()
+{
+  // Get available Wifi clearWifiCredentials()
+  for (size_t i = 0; i < MAX_NUM_WIFI_CREDENTIALS; i++)
+  {
+    String ssid = sysConfig->mWifiCredentials[i][0];
+    String pass = sysConfig->mWifiCredentials[i][1];
+
+    if (!ssid.isEmpty() && !pass.isEmpty())
+    {
+      DEBUG("Adding" + ssid + ":  ***");
+      wifiMulti.addAP(ssid.c_str(), pass.c_str());
+    }
+  }
+
+  return false;
+}
+
 void setup()
 {
   // put your setup code here, to run once:
@@ -209,6 +242,24 @@ void setup()
 
   if (SD_MMC.begin())
   {
+    // Load the settings
+    DEBUG("SD Card Present");
+
+    sysConfig = new systemConfiguration();
+
+    if (sysConfig->readFromFile(CONFIGURATION_DATA_FILE))
+    {
+      DEBUG("System configuration read");
+      DEBUG(sysConfig->toJson(true));
+    }
+    else
+    {
+      DEBUG("Invalid system configuration file. Saving default configuration");
+      sysConfig->checkDefaultWifiCredentials();
+      sysConfig->saveToFile();
+    }
+
+    addKnownWifis();
   }
   else
   {
@@ -224,8 +275,6 @@ void setup()
   WiFi.softAP(softAPName.c_str(), DEFAULT_WIFIAP_PASSWORD, 1, 0, 1);
 
   WiFi.setHostname(softAPName.c_str());
-
-  wifiMulti.addAP(ssid, password);
 
   if (wifiMulti.run() == WL_CONNECTED)
   {

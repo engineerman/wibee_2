@@ -33,7 +33,7 @@
       function sendMessage() {
         var cmd = document.getElementById("txtCmd").value;
 
-        ws.send(cmd);
+        ws.send(cmd + "\n");
       }
 
       function WebSocketTest() {

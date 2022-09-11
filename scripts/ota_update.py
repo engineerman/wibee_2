@@ -37,7 +37,7 @@ class MyListener:
 
         for ipBytes in info.addresses:
             ipaddress = socket.inet_ntoa(ipBytes)
-            print("wibee CB @" + ipaddress)
+            print("wibee @" + ipaddress)
 
         # print("Service %s added, IP address: %s" % (name, ipaddress))
 
@@ -76,7 +76,7 @@ def ota_update(source, target, env):
     sleep(1)
 
     if ipaddress != "":
-        print("Updating Wibee CB @" + ipaddress)
+        print("Updating Wibee @" + ipaddress)
         url = 'http://'+ipaddress+'/update'
 
         files = {'file': ('update.bin', open(fileName, 'rb'), 'text/csv')}
