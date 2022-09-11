@@ -7,12 +7,6 @@
 #include "ArduinoJson.h"
 #include "SD_MMC.h"
 
-#define MAX_NUM_WIFI_CREDENTIALS 5
-#define DEFAULT_WIBEE_NAME "wibee"
-
-#define DEFAULT_WIFI_SSID "Vodafonenet_Wifi_0257"
-#define DEFAULT_WIFI_PASS "LLXN3VRMYHMK"
-
 #define CONFIGURATION_DATA_FILE "/config.json"
 
 #define DEBUG(x) Serial.println(x);

@@ -5,12 +5,24 @@
 #include <WiFiMulti.h>
 #include "SD_MMC.h"
 #include "Version.h"
-#include "settings.h"
 
 #include "html.h"
 #include "sdkconfig.h"
 
 #include "ESPmDNS.h"
+
+#define USE_SETTINGS 1
+
+#define MAX_NUM_WIFI_CREDENTIALS 5
+#define DEFAULT_WIBEE_NAME "wibee"
+
+#define DEFAULT_WIFI_SSID "Vodafonenet_Wifi_0257"
+#define DEFAULT_WIFI_PASS "LLXN3VRMYHMK"
+
+#if USE_SETTINGS
+#include "settings.h"
+systemConfiguration *sysConfig = NULL;
+#endif
 
 #define DEBUG(x) Serial.println(x);
 #define DEFAULT_WIFIAP_PASSWORD "wibee444"
@@ -37,8 +49,6 @@ int rx2Ind = 0;
 
 unsigned long lastRxTime;
 unsigned long lastRx2Time;
-
-systemConfiguration *sysConfig = NULL;
 
 bool AdvertiseServices(const char *serviceName = "wibee")
 {
@@ -105,7 +115,7 @@ void onUpdate(AsyncWebServerRequest *request, const String &filename, size_t ind
   }
 }
 
-void process_websocket_messages(const uint8_t *buffer, size_t size)
+void process_websocket_messages(const uint8_t *buffer, size_t size, int sid)
 {
   char *cc = (char *)malloc(sizeof(char) * (size + 1));
   memcpy(cc, buffer, size);
@@ -116,9 +126,16 @@ void process_websocket_messages(const uint8_t *buffer, size_t size)
 
   if (cmd.startsWith("ping"))
   {
-    ws.textAll("pong");
+    ws.binary(sid, "pong");
   }
-  else if (cmd.startsWith("clrw"))
+  else if (cmd.startsWith("status"))
+  {
+    String sts = "Version " + String(VERSION) + " clients " + String(ws.count());
+
+    ws.binary(sid, sts);
+  }
+#if USE_SETTINGS
+  else if (cmd.startsWith("clrw("))
   {
     int ind = cmd.substring(5, cmd.length() - 1).toInt();
 
@@ -128,7 +145,7 @@ void process_websocket_messages(const uint8_t *buffer, size_t size)
 
     sysConfig->saveToFile();
   }
-  else if (cmd.startsWith("addw"))
+  else if (cmd.startsWith("addw("))
   {
     String ssid;
     String pass;
@@ -150,6 +167,7 @@ void process_websocket_messages(const uint8_t *buffer, size_t size)
       sysConfig->saveToFile();
     }
   }
+#endif
 
   free(cc);
 }
@@ -162,6 +180,8 @@ void on_ws_event(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventT
     Serial.printf("ws[%s][%u] connect\n", server->url(), client->id());
     // client->printf("Hello Client %u :)", client->id());
     client->ping();
+    String rsp = "version(" + String(VERSION) + ");id(" + String(client->id()) + ")";
+    server->binary(client->id(), rsp);
   }
   else if (type == WS_EVT_DISCONNECT)
   {
@@ -182,7 +202,7 @@ void on_ws_event(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventT
   {
     Serial.printf("ws[%s][%u] data[%d]: %s\n", server->url(), client->id(), len, (len) ? (char *)data : "");
 
-    process_websocket_messages(data, len);
+    process_websocket_messages(data, len, client->id());
   }
 }
 
@@ -210,9 +230,13 @@ bool check_req_timeout(int timeout = TIMEOUT)
 
 bool addKnownWifis()
 {
+
+  wifiMulti.addAP(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASS);
+
   // Get available Wifi clearWifiCredentials()
   for (size_t i = 0; i < MAX_NUM_WIFI_CREDENTIALS; i++)
   {
+#if USE_SETTINGS
     String ssid = sysConfig->mWifiCredentials[i][0];
     String pass = sysConfig->mWifiCredentials[i][1];
 
@@ -221,6 +245,9 @@ bool addKnownWifis()
       DEBUG("Adding" + ssid + ":  ***");
       wifiMulti.addAP(ssid.c_str(), pass.c_str());
     }
+#else
+    wifiMulti.addAP(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASS);
+#endif
   }
 
   return false;
@@ -240,13 +267,13 @@ void setup()
 
   lastRxTime = millis();
 
+#if USE_SETTINGS
   if (SD_MMC.begin())
   {
     // Load the settings
     DEBUG("SD Card Present");
 
     sysConfig = new systemConfiguration();
-
     if (sysConfig->readFromFile(CONFIGURATION_DATA_FILE))
     {
       DEBUG("System configuration read");
@@ -258,13 +285,14 @@ void setup()
       sysConfig->checkDefaultWifiCredentials();
       sysConfig->saveToFile();
     }
-
-    addKnownWifis();
   }
   else
   {
     Serial.println("Failed to initialize SD card");
   }
+#endif
+
+  addKnownWifis();
 
   IPAddress localIP(37, 155, 1, 1);
   IPAddress gateway(37, 155, 1, 0);
@@ -341,6 +369,21 @@ bool checkWiFi()
 
     mIsWifiOnline = true;
 
+    ws.cleanupClients();
+
+    const AsyncWebSocket::AsyncWebSocketClientLinkedList clientList = ws.getClients();
+
+    for (auto itr = clientList.begin(); itr != clientList.end(); ++itr)
+    {
+      AsyncWebSocketClient *c = *itr;
+
+      if (c->queueIsFull())
+      {
+        DEBUG("Client message queue overflowed. Closing connection");
+        c->close();
+      }
+    }
+
     return true;
   }
 }
@@ -376,7 +419,7 @@ void loop()
     rx[rxInd++] = 0;
     if (ws.count() > 0)
     {
-      ws.textAll(rx);
+      ws.binaryAll(rx);
     }
     // DEBUG("rx" + String(rx));
     rxInd = 4;
@@ -402,7 +445,7 @@ void loop()
     rx2[rx2Ind++] = 0;
     if (ws.count() > 0)
     {
-      ws.textAll(rx2);
+      ws.binaryAll(rx2);
     }
     // DEBUG("rx2" + String(rx2));
     rx2Ind = 4;

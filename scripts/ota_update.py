@@ -76,13 +76,13 @@ def ota_update(source, target, env):
     sleep(1)
 
     if ipaddress != "":
-        print("Updating Wibee @" + ipaddress)
+        print("Updating Wibee @" + ipaddress + " with " + str(VERSION_PATCH_NUMBER))
         url = 'http://'+ipaddress+'/update'
 
         files = {'file': ('update.bin', open(fileName, 'rb'), 'text/csv')}
         r = requests.post(url, files=files, verify=False)
         r.text
-
+        print("Wibee Update Complete !!!")
     else:
         print("Cannot discover Wibee ")
         
