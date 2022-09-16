@@ -34,12 +34,18 @@ const char index_html[] PROGMEM = R"rawliteral(
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
 
     <script type="text/javascript">
+      var _version;
+      var _socketId;
+
       console.log(window.location.hostname);
 
       window.addEventListener("load", (event) => {
         console.log("page is fully loaded");
 
-        document.getElementById("txtHostIP").value = window.location.hostname;
+        if (window.location.hostname.startsWith("127.0.0.1"))
+          document.getElementById("txtHostIP").value = "192.168.1.30";
+        else
+          document.getElementById("txtHostIP").value = window.location.hostname;
       });
 
       var ws = null;
@@ -92,9 +98,27 @@ const char index_html[] PROGMEM = R"rawliteral(
                         $("#textarea2").val() + received_msg.substring(4)
                       );
                     } else if (received_msg.startsWith("version(")) {
+                      // Split the message
                       vv = received_msg.substring(8, received_msg.length - 1);
-                      document.getElementById("btnConnect").value =
-                        received_msg.substring(8, received_msg.length - 1);
+
+                      received_msg.split(";").forEach(function (v) {
+                        if (v.startsWith("version")) {
+                          ind = v.indexOf(")");
+                          _version = v.substring(8, ind);
+                          console.log(_version);
+                          document.getElementById("title").innerText =
+                            "Wibee Uart WiFi Bridge v" + _version;
+                        } else if (v.startsWith("id(")) {
+                          ind = v.indexOf(")");
+                          _socketId = v.substring(3, ind);
+                          console.log(_socketId);
+                          document.getElementById("title").innerText =
+                            "Wibee Uart WiFi Bridge v" +
+                            _version +
+                            " id: " +
+                            _socketId;
+                        }
+                      });
                     } else {
                       console.log("Invalid Message " + received_msg);
                     }
@@ -121,11 +145,25 @@ const char index_html[] PROGMEM = R"rawliteral(
           alert("WebSocket NOT supported by your Browser!");
         }
       }
+
+      function clear_console() {
+        document.getElementById("textarea1").value = "";
+        document.getElementById("textarea2").value = "";
+      }
+
+      function doc_keyUp(e) {
+        // this would test for whichever key is 40 (down arrow) and the ctrl key at the same time
+        if (e.key == "C" && e.shiftKey) {
+          clear_console();
+        }
+      }
+
+      document.addEventListener("keyup", doc_keyUp, false);
     </script>
   </head>
 
   <body>
-    <h1>Wibee Uart WiFi Bridge</h1>
+    <h1 id="title">Wibee Uart WiFi Bridge</h1>
 
     <input
       placeholder="HostAddress"
@@ -158,7 +196,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     <input
       type="button"
       id="btnClear"
-      onClick='document.getElementById("textarea1").value =""; document.getElementById("textarea2").value =""'
+      onClick="clear_console()"
       value="Clear"
     />
 

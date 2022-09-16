@@ -134,6 +134,14 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int sid)
 
     ws.binary(sid, sts);
   }
+  else if (cmd.startsWith("netstat"))
+  {
+    String sts = " clients " + String(ws.count());
+
+    DEBUG("Sending Stat");
+
+    ws.binary(sid, sts);
+  }
 #if USE_SETTINGS
   else if (cmd.startsWith("clrw("))
   {
@@ -157,7 +165,7 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int sid)
     if (ind > 0)
     {
       ssid = args.substring(0, ind);
-      pass = args.substring(ind + 1);
+      pass = args.substring(ind);
       wifiMulti.addAP(ssid.c_str(), pass.c_str());
 
       sysConfig->addWifiCredentials(ssid, pass);
@@ -369,20 +377,20 @@ bool checkWiFi()
 
     mIsWifiOnline = true;
 
-    ws.cleanupClients();
+    // ws.cleanupClients();
 
-    const AsyncWebSocket::AsyncWebSocketClientLinkedList clientList = ws.getClients();
+    // const AsyncWebSocket::AsyncWebSocketClientLinkedList clientList = ws.getClients();
 
-    for (auto itr = clientList.begin(); itr != clientList.end(); ++itr)
-    {
-      AsyncWebSocketClient *c = *itr;
+    // for (auto itr = clientList.begin(); itr != clientList.end(); ++itr)
+    // {
+    //   AsyncWebSocketClient *c = *itr;
 
-      if (c->queueIsFull())
-      {
-        DEBUG("Client message queue overflowed. Closing connection");
-        c->close();
-      }
-    }
+    //   if (c->queueIsFull())
+    //   {
+    //     DEBUG("Client message queue overflowed. Closing connection");
+    //     c->close();
+    //   }
+    // }
 
     return true;
   }
@@ -417,8 +425,10 @@ void loop()
   if (rxInd > 1024 || (rxInd > 4 && check_timeout(lastRxTime, 100)))
   {
     rx[rxInd++] = 0;
+
     if (ws.count() > 0)
     {
+      Serial.printf("rxInd[%d][%u]  %s\n", rxInd, lastRxTime, rx);
       ws.binaryAll(rx);
     }
     // DEBUG("rx" + String(rx));
@@ -428,6 +438,7 @@ void loop()
   }
 
   charCnt = 0;
+
   while (Serial2.available())
   {
     rx2[rx2Ind++] = Serial2.read();
@@ -443,6 +454,7 @@ void loop()
   if (rx2Ind > 1024 || (rx2Ind > 4 && check_timeout(lastRx2Time, 100)))
   {
     rx2[rx2Ind++] = 0;
+
     if (ws.count() > 0)
     {
       ws.binaryAll(rx2);

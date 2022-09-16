@@ -102,7 +102,7 @@
                             "Wibee Uart WiFi Bridge v" + _version;
                         } else if (v.startsWith("id(")) {
                           ind = v.indexOf(")");
-                          _socketId = v.substring(4, ind);
+                          _socketId = v.substring(3, ind);
                           console.log(_socketId);
                           document.getElementById("title").innerText =
                             "Wibee Uart WiFi Bridge v" +
