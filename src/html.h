@@ -33,9 +33,34 @@ const char index_html[] PROGMEM = R"rawliteral(
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
 
     <script type="text/javascript">
+      var _version;
+      var _socketId;
+
+
+      document.onkeyup = function (e) {
+        if (e.which == 77) {
+          alert("M key was pressed");
+        } else if (e.shiftKey && e.which == 67) {
+          alert("Ctrl + C shortcut combination was pressed");
+        } else if (e.ctrlKey && e.altKey && e.which == 89) {
+          alert("Ctrl + Alt + Y shortcut combination was pressed");
+        } else if (e.ctrlKey && e.altKey && e.shiftKey && e.which == 85) {
+          alert("Ctrl + Alt + Shift + U shortcut combination was pressed");
+        }
+      };
+
       console.log(window.location.hostname);
 
-      var ws;
+      window.addEventListener("load", (event) => {
+        console.log("page is fully loaded");
+
+        if (window.location.hostname.startsWith("127.0.0.1"))
+          document.getElementById("txtHostIP").value = "192.168.1.30";
+        else
+          document.getElementById("txtHostIP").value = window.location.hostname;
+      });
+
+      var ws = null;
 
       function sendMessage() {
         var cmd = document.getElementById("txtCmd").value;
@@ -43,53 +68,129 @@ const char index_html[] PROGMEM = R"rawliteral(
         ws.send(cmd + "\n");
       }
 
-      function WebSocketTest() {
+      function connectToHost() {
+        var ip = document.getElementById("txtHostIP").value;
+
+        launchWS(ip);
+      }
+
+      function launchWS(ip) {
         if ("WebSocket" in window) {
-          //  alert("WebSocket is supported by your Browser!");
+          if (ws != null) console.log(ws.readyState);
 
-          // Let us open a web socket
-          if (window.location.hostname.startsWith("127.0.0.1")) {
-            ws = new WebSocket("ws://192.168.1.30/ws");
-          } else {
-            ws = new WebSocket("ws://" + window.location.hostname + "/ws");
+          if (ws != null && ws.readyState === WebSocket.CLOSING) {
           }
+          if (ws != null && ws.readyState === WebSocket.OPEN) {
+            ws.onclose = null;
+            ws.close();
+            document.getElementById("btnConnect").style.background = "#FF0000";
+          } else {
+            ws = new WebSocket("ws://" + ip + "/ws");
 
-          ws.onopen = function () {};
+            ws.onopen = function () {
+              document.getElementById("btnConnect").style.background =
+                "#00FF00";
+            };
+            ws.onmessage = async function (evt) {
+              if (evt.data instanceof Blob) {
+                reader = new FileReader();
 
-          ws.onmessage = function (evt) {
-            var received_msg = evt.data;
+                reader.onload = () => {
+                  // console.log("Result: " + reader.result);
+                  var received_msg = reader.result;
 
-            // Check the data source
+                  if (received_msg != null) {
+                    // Check the data source
+                    if (received_msg.startsWith("RX1,")) {
+                      $("#textarea1").val(
+                        $("#textarea1").val() + received_msg.substring(4)
+                      );
+                    } else if (received_msg.startsWith("RX2,")) {
+                      $("#textarea2").val(
+                        $("#textarea2").val() + received_msg.substring(4)
+                      );
+                    } else if (received_msg.startsWith("version(")) {
+                      // Split the message
+                      vv = received_msg.substring(8, received_msg.length - 1);
 
-            if (received_msg.startsWith("RX1,")) {
-              $("#textarea1").val(
-                $("#textarea1").val() + received_msg.substring(4)
-              );
-            } else if (received_msg.startsWith("RX2,")) {
-              $("#textarea2").val(
-                $("#textarea2").val() + received_msg.substring(4)
-              );
-            } else {
-              console.log("Invalid Message");
-            }
-          };
+                      received_msg.split(";").forEach(function (v) {
+                        if (v.startsWith("version")) {
+                          ind = v.indexOf(")");
+                          _version = v.substring(8, ind);
+                          console.log(_version);
+                          document.getElementById("title").innerText =
+                            "Wibee Uart WiFi Bridge v" + _version;
+                        } else if (v.startsWith("id(")) {
+                          ind = v.indexOf(")");
+                          _socketId = v.substring(3, ind);
+                          console.log(_socketId);
+                          document.getElementById("title").innerText =
+                            "Wibee Uart WiFi Bridge v" +
+                            _version +
+                            " id: " +
+                            _socketId;
+                        }
+                      });
+                    } else {
+                      console.log("Invalid Message " + received_msg);
+                    }
+                  }
+                };
 
-          ws.onclose = function () {
-            // websocket is closed.
-            alert("Connection is closed...");
-          };
+                await reader.readAsText(evt.data);
+              } else {
+                console.log("Result: " + evt.data);
+              }
+            };
+
+            ws.onclose = function () {
+              // websocket is closed.
+              // alert("Connection is closed...");
+              console.log("Websocket Dropped");
+              document.getElementById("btnConnect").style.background =
+                "#FF0000";
+
+              ws = null;
+            };
+          }
         } else {
-          // The browser doesn't support WebSocket
           alert("WebSocket NOT supported by your Browser!");
         }
       }
+
+      function clear_console() {
+        document.getElementById("textarea1").value = "";
+        document.getElementById("textarea2").value = "";
+      }
+
+      function doc_keyUp(e) {
+        // this would test for whichever key is 40 (down arrow) and the ctrl key at the same time
+        if (e.key == "C" && e.shiftKey) {
+          clear_console();
+        }
+      }
+
+      document.addEventListener("keyup", doc_keyUp, false);
     </script>
   </head>
 
   <body>
-    <div id="sse">
-      <a href="javascript:WebSocketTest()">Start</a>
-    </div>
+    <h1 id="title">Wibee Uart WiFi Bridge</h1>
+
+    <input
+      placeholder="HostAddress"
+      id="txtHostIP"
+      name="txtHostIP"
+      type="text"
+      class="validate"
+      autocomplete="on"
+    />
+    <input
+      type="button"
+      id="btnConnect"
+      onClick="connectToHost()"
+      value="Connect"
+    />
 
     <div class="row">
       <div class="column">
@@ -107,7 +208,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     <input
       type="button"
       id="btnClear"
-      onClick='document.getElementById("textarea1").value =""; document.getElementById("textarea2").value =""'
+      onClick="clear_console()"
       value="Clear"
     />
 
@@ -116,7 +217,7 @@ const char index_html[] PROGMEM = R"rawliteral(
 
     <input placeholder="Command" id="txtCmd" type="text" class="validate" />
 
-    <input type="button" id="btnSned" onClick="sendMessage()" value="Send" />
+    <input type="button" id="btnSend" onClick="sendMessage()" value="Send" />
   </body>
 </html>
 
