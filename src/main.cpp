@@ -29,7 +29,7 @@ AsyncWebSocket ws("/ws"); // access at ws://[esp ip]/ws
 bool shouldReboot = false;
 
 char c;
-char rx[1025 + 128];
+char rx1[1025 + 128];
 int rxInd = 0;
 
 char rx2[1025 + 128];
@@ -116,7 +116,7 @@ void process_websocket_messages(const uint8_t *buffer, size_t size)
 
   if (cmd.startsWith("ping"))
   {
-    ws.textAll("pong");
+    ws.binaryAll("pong");
   }
   else if (cmd.startsWith("clrw"))
   {
@@ -315,7 +315,7 @@ void setup()
 
   AdvertiseServices();
 
-  strcpy(rx, "RX1,");
+  strcpy(rx1, "RX1,");
   strcpy(rx2, "RX2,");
 }
 
@@ -361,7 +361,7 @@ void loop()
   charCnt = 0;
   while (Serial.available())
   {
-    rx[rxInd++] = Serial.read();
+    rx1[rxInd++] = Serial.read();
 
     lastRxTime = millis();
 
@@ -373,15 +373,15 @@ void loop()
 
   if (rxInd > 1024 || (rxInd > 4 && check_timeout(lastRxTime, 100)))
   {
-    rx[rxInd++] = 0;
+    rx1[rxInd++] = 0;
     if (ws.count() > 0)
     {
-      ws.textAll(rx);
+      ws.binaryAll(rx1);
     }
     // DEBUG("rx" + String(rx));
     rxInd = 4;
 
-    strcpy(rx, "RX1,");
+    strcpy(rx1, "RX1,");
   }
 
   charCnt = 0;
@@ -402,7 +402,7 @@ void loop()
     rx2[rx2Ind++] = 0;
     if (ws.count() > 0)
     {
-      ws.textAll(rx2);
+      ws.binaryAll(rx2);
     }
     // DEBUG("rx2" + String(rx2));
     rx2Ind = 4;
