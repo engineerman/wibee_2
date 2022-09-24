@@ -132,6 +132,38 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int cid)
 
     ws.binary(cid, sts);
   }
+  else if (cmd.startsWith("serial"))
+  {
+    String args = cmd.substring(7, cmd.length() - 2);
+
+    DEBUG(args + " " + String(cmd.length()) + "  " + args.length());
+
+    int ind = args.indexOf(",");
+    int targetPort = args.substring(0, ind).toInt();
+    args = args.substring(ind + 1);
+    int baudrate = args.toInt();
+
+    if (targetPort >= 0 && targetPort < 2 && baudrate >= 9600)
+    {
+      if (targetPort == 0)
+      {
+        Serial.end();
+        Serial.begin(baudrate);
+        DEBUG("Setting Serial1 " + String(baudrate));
+      }
+      else if (targetPort == 1)
+      {
+        Serial2.end();
+        Serial2.begin(baudrate);
+        DEBUG("Setting Serial2 " + String(baudrate));
+      }
+      delay(1000);
+    }
+    else
+    {
+      DEBUG("Invalid parameters " + String(targetPort) + "-" + String(baudrate));
+    }
+  }
   else if (cmd.startsWith("clrw"))
   {
     int ind = cmd.substring(5, cmd.length() - 1).toInt();
@@ -163,6 +195,10 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int cid)
 
       sysConfig->saveToFile();
     }
+  }
+  else
+  {
+    DEBUG("Unknown command " + cmd);
   }
 
   free(cc);

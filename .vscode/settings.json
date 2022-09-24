@@ -2,7 +2,9 @@
     "files.associations": {
         "*html": "html",
         "new": "cpp",
-        "string": "cpp"
+        "string": "cpp",
+        "string_view": "cpp",
+        "regex": "cpp"
     },
     "html.format.wrapLineLength": 1200
 }
