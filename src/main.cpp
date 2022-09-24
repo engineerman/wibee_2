@@ -126,13 +126,13 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int sid)
 
   if (cmd.startsWith("ping"))
   {
-    ws.binary(sid, "pong");
+    ws.textAll("pong");
   }
   else if (cmd.startsWith("status"))
   {
     String sts = "Version " + String(VERSION) + " clients " + String(ws.count());
 
-    ws.binary(sid, sts);
+    ws.textAll(sts);
   }
   else if (cmd.startsWith("netstat"))
   {
@@ -140,7 +140,7 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int sid)
 
     DEBUG("Sending Stat");
 
-    ws.binary(sid, sts);
+    ws.textAll(sts);
   }
 #if USE_SETTINGS
   else if (cmd.startsWith("clrw("))
@@ -189,7 +189,7 @@ void on_ws_event(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventT
     // client->printf("Hello Client %u :)", client->id());
     client->ping();
     String rsp = "version(" + String(VERSION) + ");id(" + String(client->id()) + ")";
-    server->binary(client->id(), rsp);
+    server->textAll(rsp);
   }
   else if (type == WS_EVT_DISCONNECT)
   {
@@ -429,7 +429,7 @@ void loop()
     if (ws.count() > 0)
     {
       Serial.printf("rxInd[%d][%u]  %s\n", rxInd, lastRxTime, rx);
-      ws.binaryAll(rx);
+      ws.textAll(rx);
     }
     // DEBUG("rx" + String(rx));
     rxInd = 4;
@@ -457,7 +457,7 @@ void loop()
 
     if (ws.count() > 0)
     {
-      ws.binaryAll(rx2);
+      ws.textAll(rx2);
     }
     // DEBUG("rx2" + String(rx2));
     rx2Ind = 4;
