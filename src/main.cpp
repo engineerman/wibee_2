@@ -105,7 +105,7 @@ void onUpdate(AsyncWebServerRequest *request, const String &filename, size_t ind
   }
 }
 
-void process_websocket_messages(const uint8_t *buffer, size_t size)
+void process_websocket_messages(const uint8_t *buffer, size_t size, int cid)
 {
   char *cc = (char *)malloc(sizeof(char) * (size + 1));
   memcpy(cc, buffer, size);
@@ -116,7 +116,21 @@ void process_websocket_messages(const uint8_t *buffer, size_t size)
 
   if (cmd.startsWith("ping"))
   {
-    ws.binaryAll("pong");
+    ws.binary(cid, "pong");
+  }
+  else if (cmd.startsWith("status"))
+  {
+    String sts = "Version " + String(VERSION) + " clients " + String(ws.count() + "\n");
+
+    ws.binary(cid, sts);
+  }
+  else if (cmd.startsWith("netstat"))
+  {
+    String sts = " clients " + String(ws.count() + "\n");
+
+    DEBUG("Sending Stat");
+
+    ws.binary(cid, sts);
   }
   else if (cmd.startsWith("clrw"))
   {
@@ -182,7 +196,7 @@ void on_ws_event(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventT
   {
     Serial.printf("ws[%s][%u] data[%d]: %s\n", server->url(), client->id(), len, (len) ? (char *)data : "");
 
-    process_websocket_messages(data, len);
+    process_websocket_messages(data, len, client->id());
   }
 }
 

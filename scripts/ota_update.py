@@ -84,7 +84,7 @@ def ota_update(source, target, env):
         r.text
         print("Wibee Update Complete !!!")
     else:
-        print("Cannot discover Wibee ")
+        print("Cannot find Wibee")
         
         # url = 'http://10.0.0.43/update'
 

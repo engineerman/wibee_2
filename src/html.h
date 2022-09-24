@@ -5,7 +5,7 @@
 #include "pgmspace.h"
 
 const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
+  <!DOCTYPE html>
 
 <html>
   <head>
@@ -35,19 +35,6 @@ const char index_html[] PROGMEM = R"rawliteral(
     <script type="text/javascript">
       var _version;
       var _socketId;
-
-
-      document.onkeyup = function (e) {
-        if (e.which == 77) {
-          alert("M key was pressed");
-        } else if (e.shiftKey && e.which == 67) {
-          alert("Ctrl + C shortcut combination was pressed");
-        } else if (e.ctrlKey && e.altKey && e.which == 89) {
-          alert("Ctrl + Alt + Y shortcut combination was pressed");
-        } else if (e.ctrlKey && e.altKey && e.shiftKey && e.which == 85) {
-          alert("Ctrl + Alt + Shift + U shortcut combination was pressed");
-        }
-      };
 
       console.log(window.location.hostname);
 
@@ -91,13 +78,16 @@ const char index_html[] PROGMEM = R"rawliteral(
               document.getElementById("btnConnect").style.background =
                 "#00FF00";
             };
+
+            var received_msg;
+
             ws.onmessage = async function (evt) {
               if (evt.data instanceof Blob) {
                 reader = new FileReader();
 
                 reader.onload = () => {
                   // console.log("Result: " + reader.result);
-                  var received_msg = reader.result;
+                  received_msg = reader.result;
 
                   if (received_msg != null) {
                     // Check the data source
@@ -132,7 +122,10 @@ const char index_html[] PROGMEM = R"rawliteral(
                         }
                       });
                     } else {
-                      console.log("Invalid Message " + received_msg);
+                      $("#textarea1").val(
+                        $("#textarea1").val() +
+                          ("ESP:" + received_msg)
+                      );
                     }
                   }
                 };
@@ -220,6 +213,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     <input type="button" id="btnSend" onClick="sendMessage()" value="Send" />
   </body>
 </html>
+
 
     )rawliteral";
 

@@ -3,5 +3,6 @@
         "*html": "html",
         "new": "cpp",
         "string": "cpp"
-    }
+    },
+    "html.format.wrapLineLength": 1200
 }
