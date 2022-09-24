@@ -120,13 +120,13 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int cid)
   }
   else if (cmd.startsWith("status"))
   {
-    String sts = "Version " + String(VERSION) + " clients " + String(ws.count() + "\n");
+    String sts = "Version " + String(VERSION) + " clients " + String(ws.count()) + "\n";
 
     ws.binary(cid, sts);
   }
   else if (cmd.startsWith("netstat"))
   {
-    String sts = " clients " + String(ws.count() + "\n");
+    String sts = " clients " + String(ws.count()) + "\n";
 
     DEBUG("Sending Stat");
 
