@@ -56,16 +56,20 @@ def ota_update(source, target, env):
             with open(VERSION_FILE) as FILE:
                 VERSION_PATCH_NUMBER = FILE.readline()
                 VERSION_PREFIX = VERSION_PATCH_NUMBER[0:VERSION_PATCH_NUMBER.rindex('.') + 1]
-                VERSION_PATCH_NUMBER = int(VERSION_PATCH_NUMBER[VERSION_PATCH_NUMBER.rindex('.') + 1:])
-                VERSION_PATCH_NUMBER = VERSION_PATCH_NUMBER - 1
+                VERSION_PATCH_NUMBER = int(VERSION_PATCH_NUMBER[VERSION_PATCH_NUMBER.rindex('.') + 1:])                                                                    
 
+                print("Version fetched "+ str(VERSION_PATCH_NUMBER))
                 fileName = os.getcwd() + ".\\wibee_fw_release\\wibee_esp_firmware_" + VERSION_PREFIX + str(
-                    VERSION_PATCH_NUMBER) + ".bin"
+                VERSION_PATCH_NUMBER) + ".bin"
         else:
             fileName = sys.argv[1]
+            print("File Provided " + fileName)
+            VERSION_PATCH_NUMBER = fileName                   
     else:
-        list_of_files = glob.glob(
-            '.\\wibee_fw_release\\*.bin')  # * means all if need specific format then *.csv
+        print("Wait before upload")
+        sleep(3)
+        print("Finding latest file.")                  
+        list_of_files = glob.glob('.\\wibee_fw_release\\*.bin')  # * means all if need specific format then *.csv
 
         fileName = max(list_of_files, key=os.path.getctime)
 
@@ -73,7 +77,7 @@ def ota_update(source, target, env):
 
 
     print("Waiting for discovery")
-    sleep(1)
+    sleep(3)
 
     if ipaddress != "":
         print("Updating Wibee @" + ipaddress + " with " + str(VERSION_PATCH_NUMBER))
@@ -92,6 +96,6 @@ def ota_update(source, target, env):
 if calledViaPlatformIO:
     env.AddPreAction("upload", ota_update)
 else:
-    ota_update("","","")
+    ota_updatez("","","")
 
 

@@ -14,6 +14,10 @@
 #define DEFAULT_WIFI_PASS "LLXN3VRMYHMK"
 
 #define CONFIGURATION_DATA_FILE "/config.json"
+#define LOG_FILE_PATH "/data.log"
+
+#define LOG_MEM_SIZE 16384
+#define SD_CARD_WRITE_CHUNK_SIZE (4096)
 
 #define DEBUG(x) Serial.println(x);
 

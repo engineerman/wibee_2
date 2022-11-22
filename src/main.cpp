@@ -2,15 +2,20 @@
 #include "ESPAsyncWebServer.h"
 #include <AsyncElegantOTA.h>
 
-#include <WiFiMulti.h>
 #include "SD_MMC.h"
 #include "Version.h"
 #include "settings.h"
 
 #include "html.h"
 #include "sdkconfig.h"
+#include <WiFiMulti.h>
 
 #include "ESPmDNS.h"
+
+#include "ESP32Time.h"
+#include "ctime"
+
+ESP32Time rtc;
 
 #define DEBUG(x) Serial.println(x);
 #define DEFAULT_WIFIAP_PASSWORD "wibee444"
@@ -38,7 +43,64 @@ int rx2Ind = 0;
 unsigned long lastRxTime;
 unsigned long lastRx2Time;
 
+bool enableLog = false;
+bool enableTimeStamp = false;
+
 systemConfiguration *sysConfig = NULL;
+File logFile;
+char *mLogMemory = NULL;
+uint32_t mLogMemoryIndex = 0;
+uint32_t mSDWriteChunkSize = SD_CARD_WRITE_CHUNK_SIZE;
+
+#define DEBUG(x) Serial.println(x);
+
+// #define DATE_TIME_FORMAT "%Y.%m.%d-%H:%M:%S"
+#define DATE_TIME_FORMAT "%Y-%m-%dT%H:%M:%S"
+
+static String datetime_now(String format = DATE_TIME_FORMAT)
+{
+  // TICK();
+  String ss = rtc.getTime(format);
+  // DEBUG(TOCK());
+  return ss;
+}
+
+static void set_datetime(String dateTimeStr, String format = DATE_TIME_FORMAT)
+{
+  struct tm tm_datetime;
+
+  strptime(dateTimeStr.c_str(), format.c_str(), &tm_datetime);
+
+  rtc.setTimeStruct(tm_datetime);
+
+  DEBUG(datetime_now());
+}
+
+void print_mem()
+{
+  char cc[128];
+  sprintf(cc, "Total heap: %d", ESP.getHeapSize());
+
+  DEBUG(String(cc));
+
+  sprintf(cc, "Free heap: %d", ESP.getFreeHeap());
+  DEBUG(String(cc));
+
+  sprintf(cc, "Free Heap2: %d", esp_get_free_heap_size());
+  DEBUG(String(cc));
+
+  sprintf(cc, "Min Free Heap: %d", esp_get_minimum_free_heap_size());
+  DEBUG(String(cc));
+
+  // sprintf(cc, "Largest Free block: %d", heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+  // DEBUG(String(cc));
+
+  // sprintf(cc, "Total PSRAM: %d", ESP.getPsramSize());
+  // DEBUG(String(cc));
+
+  // sprintf(cc, "Free PSRAM: %d", ESP.getFreePsram());
+  // DEBUG(String(cc));
+}
 
 bool AdvertiseServices(const char *serviceName = "wibee")
 {
@@ -120,7 +182,29 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int cid)
   }
   else if (cmd.startsWith("status"))
   {
-    String sts = "Version " + String(VERSION) + " clients " + String(ws.count()) + "\n";
+    String sts = "Version " + String(VERSION) + "\nClients " + String(ws.count());
+
+    if (enableLog)
+    {
+      sts += "\nLog enabled";
+    }
+    else
+    {
+      sts += "\nLog disabled";
+    }
+
+    if (enableTimeStamp)
+    {
+      sts += "\nTimestamp enabled\n";
+    }
+    else
+    {
+      sts += "\nTimestamp disabled\n";
+    }
+
+    sts += datetime_now();
+
+    sts += "\n";
 
     ws.binary(cid, sts);
   }
@@ -131,6 +215,11 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int cid)
     DEBUG("Sending Stat");
 
     ws.binary(cid, sts);
+  }
+  else if (cmd.startsWith("tx"))
+  {
+    String tx = cmd.substring(3, cmd.length() - 2);
+    Serial.println(tx);
   }
   else if (cmd.startsWith("serial"))
   {
@@ -164,15 +253,74 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int cid)
       DEBUG("Invalid parameters " + String(targetPort) + "-" + String(baudrate));
     }
   }
+  else if (cmd.startsWith("mem"))
+  {
+    DEBUG(String(mLogMemoryIndex));
+  }
+  else if (cmd.startsWith("enlog"))
+  {
+    int en = cmd.substring(6, cmd.length() - 1).toInt();
+    enableLog = en > 0;
+
+    if (enableLog)
+    {
+      DEBUG("Logging enabled");
+    }
+    else
+    {
+      DEBUG("Logging disabled");
+    }
+  }
+  else if (cmd.startsWith("enTS"))
+  {
+    int en = cmd.substring(5, cmd.length() - 1).toInt();
+    enableTimeStamp = en > 0;
+
+    String rsp;
+    if (enableTimeStamp)
+    {
+      DEBUG("TimeStamping enabled");
+      rsp = "TimeStamping enabled\n";
+    }
+    else
+    {
+      DEBUG("TimeStamping disabled");
+      rsp = "TimeStamping disabled\n";
+    }
+
+    ws.binary(cid, rsp);
+  }
+  else if (cmd.startsWith("dellog"))
+  {
+    SD_MMC.remove(LOG_FILE_PATH);
+    DEBUG("Log file deleted");
+  }
+  else if (cmd.startsWith("chunk_size"))
+  {
+    int chunkSize = cmd.substring(11, cmd.length() - 1).toInt();
+
+    if (chunkSize > SD_CARD_WRITE_CHUNK_SIZE && chunkSize < 65536 * 16)
+    {
+      mSDWriteChunkSize = chunkSize;
+      DEBUG("Chunk size set to " + String(chunkSize));
+    }
+    else
+    {
+      DEBUG("Invalid Chunk size " + String(chunkSize));
+    }
+  }
   else if (cmd.startsWith("clrw"))
   {
     int ind = cmd.substring(5, cmd.length() - 1).toInt();
 
-    sysConfig->clearWifiCredentials(ind);
+    if (ind < 0 && ind < 10)
+    {
+      sysConfig->clearWifiCredentials(ind);
 
-    sysConfig->addWifiCredentials(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASS);
+      sysConfig->addWifiCredentials(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASS);
 
-    sysConfig->saveToFile();
+      sysConfig->saveToFile();
+    }
   }
   else if (cmd.startsWith("addw"))
   {
@@ -195,6 +343,16 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int cid)
 
       sysConfig->saveToFile();
     }
+  }
+  else if (cmd.startsWith("set_clock"))
+  {
+    String args = cmd.substring(10, cmd.length() - 1);
+
+    set_datetime(args);
+
+    String rsp = "Time set to " + args + "\n";
+
+    ws.binary(cid, rsp);
   }
   else
   {
@@ -230,7 +388,7 @@ void on_ws_event(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventT
   }
   else if (type == WS_EVT_DATA)
   {
-    Serial.printf("ws[%s][%u] data[%d]: %s\n", server->url(), client->id(), len, (len) ? (char *)data : "");
+    // Serial.printf("ws[%s][%u] data[%d]: %s\n", server->url(), client->id(), len, (len) ? (char *)data : "");
 
     process_websocket_messages(data, len, client->id());
   }
@@ -268,7 +426,7 @@ bool addKnownWifis()
 
     if (!ssid.isEmpty() && !pass.isEmpty())
     {
-      DEBUG("Adding" + ssid + ":  ***");
+      DEBUG("Adding " + ssid + ":  ***");
       wifiMulti.addAP(ssid.c_str(), pass.c_str());
     }
   }
@@ -290,6 +448,10 @@ void setup()
 
   lastRxTime = millis();
 
+  set_datetime("2022-1-1T12:00:00");
+
+  print_mem();
+
   if (SD_MMC.begin())
   {
     // Load the settings
@@ -300,7 +462,7 @@ void setup()
     if (sysConfig->readFromFile(CONFIGURATION_DATA_FILE))
     {
       DEBUG("System configuration read");
-      DEBUG(sysConfig->toJson(true));
+      DEBUG(sysConfig->toJson(false));
     }
     else
     {
@@ -310,6 +472,15 @@ void setup()
     }
 
     addKnownWifis();
+
+    mLogMemory = (char *)malloc(LOG_MEM_SIZE);
+
+    if (!mLogMemory)
+    {
+      DEBUG("Not Enough Memory");
+    }
+
+    mLogMemoryIndex = 0;
   }
   else
   {
@@ -356,6 +527,8 @@ void setup()
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
             { request->send_P(200, "text/html", index_html); });
+
+  server.serveStatic("/log", SD_MMC, LOG_FILE_PATH);
 
   AsyncElegantOTA.begin(&server); // Start ElegantOTA
 
@@ -424,11 +597,19 @@ void loop()
   if (rxInd > 1024 || (rxInd > 4 && check_timeout(lastRxTime, 100)))
   {
     rx1[rxInd++] = 0;
+
     if (ws.count() > 0)
     {
       ws.binaryAll(rx1);
     }
-    // DEBUG("rx" + String(rx));
+
+    if (mLogMemory)
+    {
+      // Write to the buffer
+      strcpy(&mLogMemory[mLogMemoryIndex], &rx1[4]);
+      mLogMemoryIndex += (rxInd - 5);
+    }
+
     rxInd = 4;
 
     strcpy(rx1, "RX1,");
@@ -454,9 +635,32 @@ void loop()
     {
       ws.binaryAll(rx2);
     }
-    // DEBUG("rx2" + String(rx2));
+
     rx2Ind = 4;
 
     strcpy(rx2, "RX2,");
+  }
+
+  if (mLogMemoryIndex > mSDWriteChunkSize)
+  {
+    if (enableLog)
+    {
+      // Write the chunk to the SD card.
+      DEBUG("Writing to SD Card");
+
+      fs::FS &fs = SD_MMC;
+      logFile = fs.open(LOG_FILE_PATH, FILE_APPEND);
+      logFile.write((uint8_t *)mLogMemory, mLogMemoryIndex);
+
+      if (enableTimeStamp)
+      {
+        String nnow = "\n<" + datetime_now() + ">\n";
+        logFile.write((uint8_t *)nnow.c_str(), nnow.length());
+      }
+
+      logFile.close();
+    }
+
+    mLogMemoryIndex = 0;
   }
 }
