@@ -4,7 +4,7 @@
 
 #include "pgmspace.h"
 
-const char index_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
+const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 
 <html>
@@ -71,6 +71,59 @@ const char index_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
       value="Send UART1"
     />
 
+    <br />
+    <br />
+
+    <input
+      placeholder="slave addr"
+      id="txtI2CSlaveAddr"
+      type="text"
+      class="validate"
+      value="72"
+    />
+    <input
+      placeholder="reg addr"
+      id="txtI2CRegAddr"
+      type="text"
+      class="validate"
+      value="0"
+    />
+    <input
+      placeholder="reg val"
+      id="txtI2CRegVal"
+      type="text"
+      class="validate"
+      value="0"
+    />
+    <input
+      placeholder="num bytes"
+      id="txtI2CNumBytes"
+      type="text"
+      class="validate"
+      value="1"
+    />
+    <input
+      type="button"
+      id="btnI2CWrite"
+      onClick="sendI2CWrite()"
+      value="i2c write"
+    />
+    <input
+      type="button"
+      id="btnI2CRead"
+      onClick="sendI2CRead()"
+      value="i2c read"
+    />
+
+    <input
+      placeholder="read result"
+      id="txtI2CReadRes"
+      type="text"
+      class="validate"
+      value="0"
+    />
+
+    <br />
     <br />
     <div style="overflow-x: auto">
       <table id="tLayout" style="width: 40%">
@@ -191,6 +244,34 @@ const char index_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
       sendCommand("tx(" + cmd + ")\n");
     }
 
+    function sendI2CWrite() {
+      var slaveAddress = document.getElementById("txtI2CSlaveAddr").value;
+      var regAddr = document.getElementById("txtI2CRegAddr").value;
+      var regVal = document.getElementById("txtI2CRegVal").value;
+      var numBytes = document.getElementById("txtI2CNumBytes").value;
+
+      sendCommand(
+        "i2cw(" +
+          slaveAddress +
+          "," +
+          regAddr +
+          "," +
+          regVal +
+          "," +
+          numBytes +
+          ")\n"
+      );
+    }
+    function sendI2CRead() {
+      var slaveAddress = document.getElementById("txtI2CSlaveAddr").value;
+      var regAddr = document.getElementById("txtI2CRegAddr").value;
+      var numBytes = document.getElementById("txtI2CNumBytes").value;
+
+      sendCommand(
+        "i2cr(" + slaveAddress + "," + regAddr + "," + numBytes + ")\n"
+      );
+    }
+
     function sendTextCommand() {
       var cmd = document.getElementById("txtCommand").value;
 
@@ -266,18 +347,18 @@ const char index_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
                 if (received_msg != null) {
                   // Check the data source
                   if (received_msg.startsWith("RX1,")) {
-                    $("#textarea1").val(
-                      $("#textarea1").val() + received_msg.substring(4)
-                    );
+                    var ta1 = document.getElementById("textarea1");
+
+                    ta1.value += received_msg.substring(4);
 
                     if (_autoScroll) {
                       document.getElementById("textarea1").scrollTop =
                         document.getElementById("textarea1").scrollHeight;
                     }
                   } else if (received_msg.startsWith("RX2,")) {
-                    $("#textarea2").val(
-                      $("#textarea2").val() + received_msg.substring(4)
-                    );
+                    var ta2 = document.getElementById("textarea2");
+
+                    ta2.value += received_msg.substring(4);
                     if (_autoScroll) {
                       document.getElementById("textarea2").scrollTop =
                         document.getElementById("textarea2").scrollHeight;
@@ -304,10 +385,21 @@ const char index_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
                           _socketId;
                       }
                     });
-                  } else {
-                    $("#textarea1").val(
-                      $("#textarea1").val() + ("ESP:" + received_msg)
+                  } else if (received_msg.startsWith("i2cr(")) {
+                    var ta2 = document.getElementById("txtI2CReadRes");
+                    // Parse the read value.
+                    var args = received_msg.substring(
+                      6,
+                      received_msg.length - 1
                     );
+
+                    var ind = args.lastIndexOf(",");
+
+                    ta2.value = args.substring(ind + 1);
+                  } else {
+                    var ta1 = document.getElementById("textarea1");
+
+                    ta1.value += "ESP:" + received_msg;
                   }
                 }
               };

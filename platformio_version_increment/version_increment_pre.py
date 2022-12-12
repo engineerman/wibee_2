@@ -28,6 +28,7 @@ VERSION_FILE = 'version'
 VERSION_HEADER = 'Version.h'
 VERSION_PREFIX = '0.1.'
 VERSION_PATCH_NUMBER = 0
+increment = 1
 
 print('PRE_SCRIPT RUNNING')
 
@@ -38,7 +39,7 @@ if not os.path.exists(".version_no_increment"):
             VERSION_PREFIX = VERSION_PATCH_NUMBER[0:VERSION_PATCH_NUMBER.rindex('.')+1]
             VERSION_PATCH_NUMBER = int(VERSION_PATCH_NUMBER[VERSION_PATCH_NUMBER.rindex('.')+1:])
             if not os.path.exists(".version_no_increment_update_date"):
-                VERSION_PATCH_NUMBER = VERSION_PATCH_NUMBER + 1
+                VERSION_PATCH_NUMBER = VERSION_PATCH_NUMBER + increment
     except:
         print('No version file found or incorrect data in it. Starting from 0.1.0')
         VERSION_PATCH_NUMBER = 0

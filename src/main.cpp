@@ -15,6 +15,8 @@
 #include "ESP32Time.h"
 #include "ctime"
 
+#include "Wire.h"
+
 ESP32Time rtc;
 
 #define DEBUG(x) Serial.println(x);
@@ -51,6 +53,12 @@ File logFile;
 char *mLogMemory = NULL;
 uint32_t mLogMemoryIndex = 0;
 uint32_t mSDWriteChunkSize = SD_CARD_WRITE_CHUNK_SIZE;
+
+#define MAX_NUM_ARGS 5
+String mFunc;
+String mArgStr;
+int mNumArgs;
+String mArgs[MAX_NUM_ARGS];
 
 #define DEBUG(x) Serial.println(x);
 
@@ -102,6 +110,59 @@ void print_mem()
   // DEBUG(String(cc));
 }
 
+bool readI2C(byte I2C_SLAVE_ADDR, byte regaddress, byte *res, int numBytes = 1)
+{
+  byte error;
+  Wire.beginTransmission(I2C_SLAVE_ADDR);
+  Wire.write(regaddress);
+  error = Wire.endTransmission(false);
+  if (error)
+  {
+    Serial.printf("i2c write err: %u\n", error);
+    return false;
+  }
+
+  error = Wire.requestFrom((int)I2C_SLAVE_ADDR, numBytes);
+
+  if (error)
+  {
+    Serial.printf("i2c request err: %u\n", error);
+    // return false;
+  }
+
+  Wire.readBytes(res, numBytes);
+
+  // DEBUG("Regval0 " + String(regval[0]) + " Regval1" + String(regval[1]));
+
+  return true;
+}
+
+bool writeI2C(byte I2C_SLAVE_ADDR, byte regaddress, byte *regVal, int numBytes = 1)
+{
+  DEBUG("i2cw(" + String(I2C_SLAVE_ADDR) + "," + String(regaddress) + "," + String(*regVal) + ")");
+
+  byte error;
+  Wire.beginTransmission(I2C_SLAVE_ADDR);
+  Wire.write(regaddress);
+
+  for (size_t i = 0; i < numBytes; i++)
+  {
+    Wire.write(regVal[i]);
+
+    Serial.printf("wr 0x%x\n", regVal[i]);
+  }
+  error = Wire.endTransmission();
+
+  if (error)
+  {
+    Serial.printf("endTransmission: %u\n", error);
+    return false;
+  }
+
+  // printf("reg %d  =  0x%x\n",regaddress,regval[0]);
+  return true;
+}
+
 bool AdvertiseServices(const char *serviceName = "wibee")
 {
   MDNS.end();
@@ -129,7 +190,7 @@ void onUpdate(AsyncWebServerRequest *request, const String &filename, size_t ind
 {
   if (index == 0)
   {
-    Serial.printf("WiBee FIRMWARE DOWNLOADING: %s\n", filename.c_str());
+    Serial.printf("WiBee FIRMWARE DOWNLOADING: %s %d bytes\n", filename.c_str(), len);
 
     if (!Update.begin(UPDATE_SIZE_UNKNOWN))
     { // start with max available size
@@ -167,6 +228,68 @@ void onUpdate(AsyncWebServerRequest *request, const String &filename, size_t ind
   }
 }
 
+void clearArgs()
+{
+  mNumArgs = 0;
+
+  for (int i = 0; i < MAX_NUM_ARGS; i++)
+  {
+    mArgs[i] = "";
+  }
+}
+
+bool parse_message(String message)
+{
+  mFunc = "";
+
+  int arg_start_index = message.indexOf('(');
+  int arg_end_index = message.lastIndexOf(')');
+
+  if (arg_start_index > 1 && (arg_end_index - arg_start_index) > 0)
+  {
+    message.replace(String(char(255)), String("")); // Remove ÿ = 255 characters which sometimes occur in received messages.
+    arg_start_index = message.indexOf('(');
+    arg_end_index = message.lastIndexOf(')');
+
+    mFunc = message.substring(0, arg_start_index);
+
+    mArgStr = message.substring(arg_start_index + 1, arg_end_index);
+
+    return true;
+  }
+  else
+  {
+    mFunc = "";
+
+    mArgStr = "";
+
+    return false;
+  }
+}
+
+void parse_args()
+{
+  size_t pos = 0;
+
+  clearArgs();
+
+  pos = mArgStr.indexOf(',');
+
+  while ((pos = mArgStr.indexOf(',')) != std::string::npos)
+  {
+    mArgs[mNumArgs++] = mArgStr.substring(0, pos);
+
+    mArgStr.remove(0, pos + 1);
+
+    if (mNumArgs >= 5)
+    {
+      break;
+    }
+  }
+
+  mArgs[mNumArgs++] = mArgStr;
+}
+
 void process_websocket_messages(const uint8_t *buffer, size_t size, int cid)
 {
   char *cc = (char *)malloc(sizeof(char) * (size + 1));
@@ -176,11 +299,14 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int cid)
 
   String cmd = String(cc);
 
-  if (cmd.startsWith("ping"))
+  parse_message(cmd);
+  parse_args();
+
+  if (mFunc.startsWith("ping"))
   {
     ws.binary(cid, "pong");
   }
-  else if (cmd.startsWith("status"))
+  else if (mFunc.startsWith("status"))
   {
     String sts = "Version " + String(VERSION) + "\nClients " + String(ws.count());
 
@@ -208,7 +334,7 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int cid)
 
     ws.binary(cid, sts);
   }
-  else if (cmd.startsWith("netstat"))
+  else if (mFunc.startsWith("netstat"))
   {
     String sts = " clients " + String(ws.count()) + "\n";
 
@@ -216,125 +342,143 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int cid)
 
     ws.binary(cid, sts);
   }
-  else if (cmd.startsWith("tx"))
+  else if (mFunc.startsWith("config"))
   {
-    String tx = cmd.substring(3, cmd.length() - 2);
-    Serial.println(tx);
+    String sts = sysConfig->toJson();
+
+    DEBUG("Sending config");
+
+    sts += ("\nWiFi connected to " + WiFi.SSID() + " " + WiFi.localIP().toString() + "\n");
+
+    ws.binary(cid, sts);
+  }
+  else if (mFunc.startsWith("tx"))
+  {
+    if (mNumArgs > 0)
+    {
+      Serial.println(mArgStr);
+    }
   }
   else if (cmd.startsWith("serial"))
   {
-    String args = cmd.substring(7, cmd.length() - 2);
-
-    DEBUG(args + " " + String(cmd.length()) + "  " + args.length());
-
-    int ind = args.indexOf(",");
-    int targetPort = args.substring(0, ind).toInt();
-    args = args.substring(ind + 1);
-    int baudrate = args.toInt();
-
-    if (targetPort >= 0 && targetPort < 2 && baudrate >= 9600)
+    if (mNumArgs >= 2)
     {
-      if (targetPort == 0)
+      int targetPort = mArgs[0].toInt();
+      int baudrate = mArgs[1].toInt();
+
+      if (targetPort >= 0 && targetPort < 2 && baudrate >= 9600)
       {
-        Serial.end();
-        Serial.begin(baudrate);
-        DEBUG("Setting Serial1 " + String(baudrate));
+        if (targetPort == 0)
+        {
+          Serial.end();
+          Serial.begin(baudrate);
+          DEBUG("Setting Serial1 " + String(baudrate));
+        }
+        else if (targetPort == 1)
+        {
+          Serial2.end();
+          Serial2.begin(baudrate);
+          DEBUG("Setting Serial2 " + String(baudrate));
+        }
+        delay(1000);
       }
-      else if (targetPort == 1)
+      else
       {
-        Serial2.end();
-        Serial2.begin(baudrate);
-        DEBUG("Setting Serial2 " + String(baudrate));
+        DEBUG("Invalid parameters " + String(targetPort) + "-" + String(baudrate));
       }
-      delay(1000);
-    }
-    else
-    {
-      DEBUG("Invalid parameters " + String(targetPort) + "-" + String(baudrate));
     }
   }
-  else if (cmd.startsWith("mem"))
+  else if (mFunc.startsWith("mem"))
   {
     DEBUG(String(mLogMemoryIndex));
   }
-  else if (cmd.startsWith("enlog"))
+  else if (mFunc.startsWith("enlog"))
   {
-    int en = cmd.substring(6, cmd.length() - 1).toInt();
-    enableLog = en > 0;
+    if (mNumArgs >= 1)
+    {
+      int en = mArgs[0].toInt();
+      enableLog = en > 0;
 
-    if (enableLog)
-    {
-      DEBUG("Logging enabled");
-    }
-    else
-    {
-      DEBUG("Logging disabled");
+      if (enableLog)
+      {
+        DEBUG("Logging enabled");
+      }
+      else
+      {
+        DEBUG("Logging disabled");
+      }
     }
   }
-  else if (cmd.startsWith("enTS"))
+  else if (mFunc.startsWith("enTS"))
   {
-    int en = cmd.substring(5, cmd.length() - 1).toInt();
-    enableTimeStamp = en > 0;
-
-    String rsp;
-    if (enableTimeStamp)
+    if (mNumArgs >= 1)
     {
-      DEBUG("TimeStamping enabled");
-      rsp = "TimeStamping enabled\n";
-    }
-    else
-    {
-      DEBUG("TimeStamping disabled");
-      rsp = "TimeStamping disabled\n";
-    }
+      int en = mArgs[0].toInt();
+      enableTimeStamp = en > 0;
 
-    ws.binary(cid, rsp);
+      String rsp;
+      if (enableTimeStamp)
+      {
+        DEBUG("TimeStamping enabled");
+        rsp = "TimeStamping enabled\n";
+      }
+      else
+      {
+        DEBUG("TimeStamping disabled");
+        rsp = "TimeStamping disabled\n";
+      }
+
+      ws.binary(cid, rsp);
+    }
   }
-  else if (cmd.startsWith("dellog"))
+  else if (mFunc.startsWith("dellog"))
   {
     SD_MMC.remove(LOG_FILE_PATH);
     DEBUG("Log file deleted");
   }
-  else if (cmd.startsWith("chunk_size"))
+  else if (mFunc.startsWith("chunk_size"))
   {
-    int chunkSize = cmd.substring(11, cmd.length() - 1).toInt();
+    if (mNumArgs >= 1)
+    {
+      int chunkSize = mArgs[0].toInt();
 
-    if (chunkSize > SD_CARD_WRITE_CHUNK_SIZE && chunkSize < 65536 * 16)
-    {
-      mSDWriteChunkSize = chunkSize;
-      DEBUG("Chunk size set to " + String(chunkSize));
-    }
-    else
-    {
-      DEBUG("Invalid Chunk size " + String(chunkSize));
+      if (chunkSize > SD_CARD_WRITE_CHUNK_SIZE && chunkSize < 65536 * 16)
+      {
+        mSDWriteChunkSize = chunkSize;
+        DEBUG("Chunk size set to " + String(chunkSize));
+      }
+      else
+      {
+        DEBUG("Invalid Chunk size " + String(chunkSize));
+      }
     }
   }
-  else if (cmd.startsWith("clrw"))
+  else if (mFunc.startsWith("clrw"))
   {
-    int ind = cmd.substring(5, cmd.length() - 1).toInt();
-
-    if (ind < 0 && ind < 10)
+    if (mNumArgs >= 1)
     {
-      sysConfig->clearWifiCredentials(ind);
+      int ind = mArgs[0].toInt();
 
-      sysConfig->addWifiCredentials(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASS);
+      if (ind < 0 && ind < 10)
+      {
+        sysConfig->clearWifiCredentials(ind);
 
-      sysConfig->saveToFile();
+        sysConfig->addWifiCredentials(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASS);
+
+        sysConfig->saveToFile();
+      }
     }
   }
-  else if (cmd.startsWith("addw"))
+  else if (mFunc.startsWith("addw"))
   {
     String ssid;
     String pass;
 
-    String args = cmd.substring(5, cmd.length() - 1);
-
-    int ind = args.indexOf(",");
-
-    if (ind > 0)
+    if (mNumArgs >= 2)
     {
-      ssid = args.substring(0, ind);
-      pass = args.substring(ind + 1);
+      ssid = mArgs[0];
+      pass = mArgs[1];
+
       wifiMulti.addAP(ssid.c_str(), pass.c_str());
 
       sysConfig->addWifiCredentials(ssid, pass);
@@ -344,15 +488,93 @@ void process_websocket_messages(const uint8_t *buffer, size_t size, int cid)
       sysConfig->saveToFile();
     }
   }
-  else if (cmd.startsWith("set_clock"))
+  else if (mFunc.startsWith("set_clock"))
   {
-    String args = cmd.substring(10, cmd.length() - 1);
+    if (mNumArgs >= 1)
+    {
+      String args = mArgs[0];
 
-    set_datetime(args);
+      set_datetime(args);
 
-    String rsp = "Time set to " + args + "\n";
+      String rsp = "Time set to " + args + "\n";
 
-    ws.binary(cid, rsp);
+      ws.binary(cid, rsp);
+    }
+  }
+  else if (cmd.startsWith("i2cw"))
+  {
+    if (mNumArgs >= 3)
+    {
+
+      byte slaveAddr = mArgs[0].toInt();
+
+      byte regAddr = mArgs[1].toInt();
+
+      int regVal = mArgs[2].toInt();
+
+      int numBytes = 1;
+
+      if (mNumArgs >= 4)
+      {
+        numBytes = mArgs[3].toInt();
+      }
+
+      byte *cc = (byte *)malloc(numBytes + 1);
+      memset(cc, 0, numBytes + 1);
+
+      for (size_t i = 0; i < numBytes; i++)
+      {
+        cc[i] = (regVal >> (8 * (numBytes - i - 1))) & 0xFF;
+      }
+
+      String rsp = "Wr " + String(slaveAddr) + ": " + String(regAddr) + " -> " + String(regVal) + " -> " + String(numBytes);
+
+      DEBUG(rsp);
+
+      writeI2C(slaveAddr, regAddr, cc, numBytes);
+
+      free(cc);
+
+      rsp = "i2cw(" + String(slaveAddr) + "," + String(regAddr) + "," + String(regVal) + ")";
+
+      ws.binary(cid, rsp);
+    }
+  }
+
+  else if (mFunc.startsWith("i2cr"))
+  {
+    if (mNumArgs >= 3)
+    {
+      byte slaveAddr = mArgs[0].toInt();
+      byte regAddr = mArgs[1].toInt();
+
+      int numBytes = 1;
+
+      if (mNumArgs >= 3)
+      {
+        numBytes = mArgs[2].toInt();
+      }
+
+      byte *res = (byte *)malloc(numBytes + 1);
+      memset(res, 0, numBytes);
+
+      bool success = readI2C(slaveAddr, regAddr, res, numBytes);
+
+      String rsp = "Rd " + String(slaveAddr) + ": " + String(regAddr) + "#: " + String(numBytes);
+      DEBUG(rsp);
+
+      char cc[32];
+      cc[0] = 0;
+
+      for (size_t i = 0; i < numBytes; i++)
+      {
+        sprintf(cc, "%s%02x", cc, res[i]);
+      }
+
+      rsp = "i2cr(" + String(slaveAddr) + "," + String(regAddr) + "," + String(cc) + ")";
+
+      ws.binary(cid, rsp);
+    }
   }
   else
   {
@@ -440,6 +662,8 @@ void setup()
   Serial.begin(460800);
   Serial2.begin(460800);
 
+  Wire.begin();
+
   Serial.setRxBufferSize(1024);  // Default 256
   Serial2.setRxBufferSize(1024); // Default 256
 
@@ -486,6 +710,9 @@ void setup()
   {
     Serial.println("Failed to initialize SD card");
   }
+
+  wifiMulti.addAP("Zyxel7014b2", "PN79RCCVF3FP4");
+  wifiMulti.addAP("FASAP", "FASAP123");
 
   IPAddress localIP(37, 155, 1, 1);
   IPAddress gateway(37, 155, 1, 0);
@@ -554,6 +781,8 @@ bool checkWiFi()
   {
     if (!mIsWifiOnline)
     {
+      DEBUG("Wifi State" + String(wifiMulti.run()));
+
       DEBUG("");
       DEBUG("WiFi connected to " + WiFi.SSID());
       DEBUG("IP address: ");
@@ -574,7 +803,6 @@ void loop()
 {
 
   // Check serial port and push them through websocket
-
   if (check_req_timeout())
   {
     // Check Wifi Connection
